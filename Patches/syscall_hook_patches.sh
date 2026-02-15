@@ -96,10 +96,21 @@ for i in "${patch_files[@]}"; do
         extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\
                         char __user **buf_ptr, size_t *count_ptr);\
         #endif' fs/read_write.c
-            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/,/^}/ {
-                s/^[[:space:]]*if (f\.file) {/\/\/ Insert KSU hook\n#ifdef CONFIG_KSU_MANUAL_HOOK\n\tif (unlikely(ksu_sys_read_hook)) \n\t\tksu_handle_sys_read(fd, &buf, &count);\n#endif\n&/
-            }' fs/read_write.c
+
+        IF_LINE=$(awk -v start="$SYSCALL_LINE" '
+            NR >= start && /^}/ {exit}  # 到函数结束符停止
+            NR >= start && /^[[:space:]]*if (f\.file) {/ {print NR; exit}
+        ' fs/read_write.c)
         
+        if [ -n "$IF_LINE" ]; then
+            # 在 IF_LINE 的上一行插入钩子调用（行号插入，语法绝对正确）
+            sed -i "${IF_LINE}i\
+    #ifdef CONFIG_KSU_MANUAL_HOOK\\
+    \tif (unlikely(ksu_sys_read_hook)) \\
+    \t\tksu_handle_sys_read(fd, &buf, &count);\\
+    #endif" fs/read_write.c
+
+        fi
             if grep -q "CONFIG_KSU_MANUAL_HOOK" "fs/read_write.c" && grep -q "ksu_sys_read_hook" "fs/read_write.c"; then
                 echo "[+] fs/read_write.c Patched exactly as your patch file!"
                 echo "[+] KSU_MANUAL_HOOK count: $(grep -c "CONFIG_KSU_MANUAL_HOOK" "fs/read_write.c")"
