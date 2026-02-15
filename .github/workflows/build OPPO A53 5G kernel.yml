@@ -1,4 +1,4 @@
-name: Build Sample YAML
+name: Build oppo a53 5g
 
 on:
   workflow_call:
