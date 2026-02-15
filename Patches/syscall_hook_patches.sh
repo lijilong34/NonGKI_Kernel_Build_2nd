@@ -90,19 +90,21 @@ for i in "${patch_files[@]}"; do
     ## read_write.c
     fs/read_write.c)
         if grep -q "sys_read" "drivers/kernelsu/arch.h" >/dev/null 2>&1; then
-            if [ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 19 ]; then
-                sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i \#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
-                sed -i '0,/if (f\.file) {/{s/if (f\.file) {/\n#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, \&buf, \&count);\n#endif\n\tif (f.file) {/}' fs/read_write.c
+            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i \
+        #ifdef CONFIG_KSU_MANUAL_HOOK\
+        extern bool ksu_sys_read_hook __read_mostly;\
+        extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\
+                        char __user **buf_ptr, size_t *count_ptr);\
+        #endif' fs/read_write.c
+            sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/,/^}/ {
+                s/^[[:space:]]*if (f\.file) {/\/\/ Insert KSU hook\n#ifdef CONFIG_KSU_MANUAL_HOOK\n\tif (unlikely(ksu_sys_read_hook)) \n\t\tksu_handle_sys_read(fd, &buf, &count);\n#endif\n&/
+            }' fs/read_write.c
+        
+            if grep -q "CONFIG_KSU_MANUAL_HOOK" "fs/read_write.c" && grep -q "ksu_sys_read_hook" "fs/read_write.c"; then
+                echo "[+] fs/read_write.c Patched exactly as your patch file!"
+                echo "[+] KSU_MANUAL_HOOK count: $(grep -c "CONFIG_KSU_MANUAL_HOOK" "fs/read_write.c")"
             else
-                sed -i '/^SYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)/i \#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n#endif' fs/read_write.c
-                sed -i '/return ksys_read(fd, buf, count);/i\#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_sys_read(fd, &buf, &count);\n#endif' fs/read_write.c
-            fi
-
-            if grep -q "ksu_handle_sys_read" "fs/read_write.c"; then
-                echo "[+] fs/read_write.c Patched!"
-                echo "[+] Count: $(grep -c "ksu_handle_sys_read" "fs/read_write.c")"
-            else
-                echo "[-] fs/read_write.c patch failed for unknown reasons, please provide feedback in time."
+                echo "[-] fs/read_write.c patch failed, please check the file content."
             fi
         else
             echo "[-] KernelSU have no sys_read, Skipped."
